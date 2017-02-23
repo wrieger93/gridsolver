@@ -7,11 +7,15 @@ use std::path::Path;
 use basic_types::*;
 
 // Dictionary
+// a structure that supports finding words that match a pattern
 
 #[derive(Clone, Debug, Default)]
 pub struct Dictionary {
+    // all the words in the dict
     all_words: HashSet<Word>,
+    // a map of word length to all words of that length
     words_by_size: HashMap<usize, Vec<Word>>,
+    // a cache of all the lookups that have been done
     lookups: HashMap<Pattern, Vec<Word>>,
 }
 
@@ -20,6 +24,7 @@ impl Dictionary {
         Dictionary::default()
     }
 
+    // load a dictionary from a file that's a list of words
     pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Dictionary> {
         // read the file
         let mut entire = String::new();
@@ -33,6 +38,7 @@ impl Dictionary {
         Ok(dict)
     }
 
+    // add a word to the dictionary
     pub fn add(&mut self, word: &Word) {
         if !self.all_words.contains(word) {
             self.all_words.insert(word.clone());
@@ -42,6 +48,7 @@ impl Dictionary {
         }
     }
 
+    // remove a word from the dictionary
     pub fn remove(&mut self, word: &Word) {
         if self.all_words.contains(word) {
             self.all_words.remove(word);
@@ -54,23 +61,29 @@ impl Dictionary {
         }
     }
 
+    // check if the dictionary contains a word
     pub fn contains(&self, word: &Word) -> bool {
         self.all_words.contains(word)
     }
 
+    // find all words in the dictionary that match the Pattern
     pub fn lookup(&mut self, pattern: &Pattern) -> Vec<Word> {
+        // a blank pattern matches every word of that length
         let empty = !pattern.masks.iter().any(|opt| opt.is_some());
         if empty {
-            return self.words_by_size[&pattern.size()].clone();
+            self.words_by_size[&pattern.size()].clone()
         }
-
-        if self.lookups.contains_key(pattern) {
+        // check if the pattern is in the cache
+        else if self.lookups.contains_key(pattern) {
             self.lookups[pattern].clone()
-        } else {
+        }
+        // actually do the lookup
+        else {
             let res: Vec<Word> = self.words_by_size[&pattern.size()].iter()
                 .filter(|w| pattern.matches(w))
                 .cloned()
                 .collect();
+            // add this lookup to the cache
             self.lookups.insert(pattern.clone(), res.clone());
             res
         }

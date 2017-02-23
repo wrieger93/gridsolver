@@ -6,16 +6,19 @@ use gridsolver::dict::Dictionary;
 use gridsolver::grid::*;
 
 fn main() {
-    let dict = Dictionary::from_file("/usr/share/dict/words").expect("could not load dict");
-    let grid = Grid::from_file("assets/grid2.txt").expect("could not load grid");
+    println!("loading dictionary");
+    let dict = Dictionary::from_file("assets/ukacd_utf8.txt").expect("could not load dict");
+    println!("dictionary loaded");
+    println!("loading grid");
+    let grid = Grid::from_file("assets/grid1.txt").expect("could not load grid");
+    println!("grid loaded\n");
+
+    // keep trying to solve the grid
     let mut solver = GridSolver::new(&grid, &dict);
-    loop {
-        if solver.solve() {
-            println!("{}", solver);
-        }
-        else {
-            println!("retrying");
-        }
+    while !solver.solve() {
         solver.new_grid(&grid);
     }
+    
+    // print the filled grid
+    println!("{}", solver);
 }

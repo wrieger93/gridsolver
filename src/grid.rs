@@ -13,17 +13,25 @@ use basic_types::*;
 use dict::Dictionary;
 
 // Grid
+// a grid of cells
+// an entry in the grid is a run of at least three consecutive white cells
+// in either the across or down direction
 
 #[derive(Clone, Debug)]
 pub struct Grid {
+    // the cells
     cells: Vec<Cell>,
+    // a map of an entryindex to the coordinates of that entry, in order
     entries: HashMap<EntryIndex, Vec<GridCoord>>,
+    // all the entries that intersect a given entry
     perpendicular_entries: HashMap<EntryIndex, Vec<EntryIndex>>,
+    // duh
     width: usize,
     height: usize,
 }
 
 impl Grid {
+    // construct a new empty Grid
     pub fn new(width: usize, height: usize) -> Option<Grid> {
         if width == 0 || height == 0 {
             return None;
@@ -39,6 +47,7 @@ impl Grid {
         Some(grid)
     }
 
+    // construct a Grid from a slice of Cells
     pub fn from_cells(cells: &[Cell], width: usize, height: usize) -> Option<Grid> {
         if width == 0 || height == 0 {
             return None;
@@ -58,6 +67,8 @@ impl Grid {
         Some(grid)
     }
 
+    // load a Grid from a file
+    // see the examples in the assets folder for examples
     pub fn from_file<P: AsRef<Path>>(path: P) -> io::Result<Grid> {
         // read the file
         let file = try!(File::open(path));
@@ -114,13 +125,19 @@ impl Grid {
         }
     }
 
+    // the coordinates for a given entry
     pub fn get_entry_coords(&self, index: EntryIndex) -> Option<Vec<GridCoord>> {
         self.entries.get(&index).cloned()
     }
 
+    // returns the entry for a given entryindex
     pub fn get_entry(&self, index: EntryIndex) -> Option<Entry> {
+        // get the coordinates of the entry
         self.entries.get(&index)
             .map(|coords| {
+                // get the cells at those coords
+                // and map each cell to the underlying option<letter>
+                // all the coords had better point to white cells or we did something wrong
                 let letter_vec: Vec<Option<Letter>> = coords.iter()
                     .map(|coord| {
                         let cell = self.get_cell(*coord);
@@ -134,6 +151,7 @@ impl Grid {
             })
     }
 
+    // set an entry to equal a given entry
     pub fn set_entry(&mut self, index: EntryIndex, entry: &Entry) {
         if self.entries.contains_key(&index) {
             let coords: Vec<GridCoord> = self.entries[&index].clone();
@@ -144,6 +162,7 @@ impl Grid {
         }
     }
 
+    // fill an entry with the given word
     pub fn fill_entry(&mut self, index: EntryIndex, word: &Word) {
         if self.entries.contains_key(&index) {
             let coords: Vec<GridCoord> = self.entries[&index].clone();
@@ -155,6 +174,7 @@ impl Grid {
         }
     }
 
+    // erase all filled cells in the given entry
     pub fn clear_entry(&mut self, index: EntryIndex) {
         if self.entries.contains_key(&index) {
             let coords: Vec<GridCoord> = self.entries[&index].clone();
@@ -164,10 +184,12 @@ impl Grid {
         }
     }
 
+    // get a list of entries perpendicular to the given one
     pub fn entries_perp_to(&self, index: EntryIndex) -> Vec<EntryIndex> {
         self.perpendicular_entries[&index].clone()
     }
 
+    // check if an entry is filled
     pub fn is_entry_filled(&self, index: EntryIndex) -> bool {
         match self.get_entry(index) {
             Some(entry) => {
@@ -182,21 +204,24 @@ impl Grid {
         }
     }
 
+    // check if the entire grid is filled
     pub fn is_filled(&self) -> bool {
         self.cells.iter().all(|cell| cell.is_black() || cell.is_filled())
     }
 
+    // returns all the entryindex's in the grid in arbitrary order
     pub fn entry_indices(&self) -> Vec<EntryIndex> {
         self.entries.keys().cloned().collect()
     }
 
+    // returns all entry's in the grid in arbitrary order
     pub fn entries(&self) -> Vec<Entry> {
         self.entries.keys()
             .map(|i| self.get_entry(*i).unwrap())
             .collect()
     }
 
-
+    // returns all the rows of the grid, where a row is a vector of cells
     pub fn rows(&self) -> Vec<Vec<Cell>> {
         (0..self.height)
             .map(|row| {
@@ -207,6 +232,7 @@ impl Grid {
             .collect()
     }
 
+    // returns all the columns of the grid, where a column is a vector of cells
     pub fn cols(&self) -> Vec<Vec<Cell>> {
         (0..self.width)
             .map(|col| {
@@ -217,11 +243,14 @@ impl Grid {
             .collect()
     }
 
+    // converts a coordinate to an index for the self.cells vector
     #[inline]
     fn coord_to_index(&self, coord: GridCoord) -> usize {
         coord.row * self.width + coord.col
     }
 
+    // calculates the entry coordinates for across entries
+    // by iterating over the rows
     fn across_entry_coords(&self) -> Vec<Vec<GridCoord>> {
         let mut entry_coords_vec = vec![];
         for (row, row_vec) in self.rows().iter().enumerate() {
@@ -230,10 +259,13 @@ impl Grid {
             for (col, &cell) in row_vec.iter().enumerate() {
                 match cell {
                     Cell::White(_) => {
+                        // if we're on a white cell, we're in a possible entry
                         in_entry = true;
                         entry_coords.push((row, col).into());
                     },
                     Cell::Black => {
+                        // if we hit a black cell, our entry stops
+                        // so check if it's at least length 3 and add it to the list
                         if in_entry {
                             in_entry = false;
                             if entry_coords.len() >= 3 {
@@ -244,6 +276,7 @@ impl Grid {
                     }
                 }
             }
+            // need this final check for the end of the row
             if in_entry && entry_coords.len() >= 3 {
                 entry_coords_vec.push(entry_coords.clone());
             }
@@ -252,7 +285,10 @@ impl Grid {
         entry_coords_vec
     }
 
+    // calculates the entry coordinates for down entries
+    // by iterating over the columns
     fn down_entry_coords(&self) -> Vec<Vec<GridCoord>> {
+        // see the comments for across_entry_coords
         let mut entry_coords_vec = vec![];
         for (col, col_vec) in self.cols().iter().enumerate() {
             let mut in_entry = false;
@@ -282,11 +318,16 @@ impl Grid {
         entry_coords_vec
     }
 
+    // rebuilds all the data structures in the grid
     fn rebuild(&mut self) {
+        // rebuild the self.entries map
         self.entries.clear();
         let across = self.across_entry_coords();
         let down = self.down_entry_coords();
         let mut entry_counter = 1;
+        // iterate over every cell from left to right, top to bottom,
+        // and check if it's the start of any entry
+        // if it is, add the entry to the map and increment the entry counter
         for row in 0..self.height {
             for col in 0..self.width {
                 let mut added_entry = false;
@@ -315,6 +356,11 @@ impl Grid {
             }
         }
 
+        // rebuild the perpendicular entries
+        // for every entry, loop over all other entries and see if they have any
+        // indices in common
+        // there's probably a faster way to do this but it's not a bottleneck
+        // since it's only called when the grid is initialized
         self.perpendicular_entries.clear();
         for entry_num in self.entry_indices() {
             let coords = self.entries[&entry_num].clone();
@@ -358,17 +404,31 @@ impl fmt::Display for Grid {
     }
 }
 
+// GridSolver
+// a structure that fills a grid with valid words from a dictionary
+
 #[derive(Clone, Debug)]
 pub struct GridSolver {
+    // the grid being filled
     grid: Grid,
+    // the dictionary in use
     dict: Dictionary,
+    // words that have been added to the grid already
+    // you can't reuse words in a fill
     added_words: HashSet<Word>,
+    // entries that haven't been filled yet
     unfilled_entries: HashSet<EntryIndex>,
+    // for every entry, a list of words that can fill that entry
+    // kept up to date as the grid is being filled
     possible_fills: HashMap<EntryIndex, Vec<Word>>,
+    // a stack that keeps tract of the changes we make to the grid
+    // whenever we insert a new word
+    // this allows us to easily backtrack by undoing the changes
     changes: Vec<(EntryIndex, Entry)>,
 }
 
 impl GridSolver {
+    // construct a new gridsolver for the given grid with the given dictionary
     pub fn new(grid: &Grid, dict: &Dictionary) -> GridSolver {
         let mut solver = GridSolver {
             grid: grid.clone(),
@@ -379,6 +439,7 @@ impl GridSolver {
             changes: vec![],
         };
 
+        // all entries are initially unsolved
         for index in solver.grid.entry_indices() {
             solver.update_possible_fills(index);
             solver.unfilled_entries.insert(index);
@@ -387,10 +448,14 @@ impl GridSolver {
         solver
     }
 
+    // update the list of possible words for a given index
     fn update_possible_fills(&mut self, index: EntryIndex) {
-        let opt = self.grid.get_entry(index);
-        match opt {
+        // get the entry from the grid
+        let opt_entry = self.grid.get_entry(index);
+        match opt_entry {
             Some(entry) => {
+                // make a pattern fitting the entry
+                // and update the possible fill words
                 let pattern = Pattern::new(&entry.letters);
                 let fills = self.dict.lookup(&pattern);
                 self.possible_fills.insert(index, fills);
@@ -399,61 +464,69 @@ impl GridSolver {
         };
     }
 
+    // fill the given entry with the given word
     fn fill(&mut self, index: EntryIndex, word: &Word) {
+        // push the index we're changing as well as a copy of the entry before
+        // we insert the word onto the changes stack
         self.changes.push((index, self.grid.get_entry(index).unwrap()));
+        // fill the entry and remove the index from unfilled_entries
         self.grid.fill_entry(index, word);
-        self.possible_fills.remove(&index);
         self.unfilled_entries.remove(&index);
+        // update the possible words for the intersecting entries
         for perp in self.grid.entries_perp_to(index) {
             self.update_possible_fills(perp);
         }
     }
 
+    // undo filling the last entry
     fn undo_last_fill(&mut self) {
+        // no changes = nothing to undo
         if self.changes.is_empty() {
             return;
         }
+        // set the entry to what it was beforehand
         let (index, prev_entry) = self.changes.pop().unwrap();
         self.grid.set_entry(index, &prev_entry);
-        self.possible_fills.insert(index, vec![]);
+        // the entry is now unfilled
         self.unfilled_entries.insert(index);
+        // update the possible words for both the index and all intersecting indices
         self.update_possible_fills(index);
         for perp in self.grid.entries_perp_to(index) {
             self.update_possible_fills(perp);
         }
     }
 
-    fn score_fill(&mut self, index: EntryIndex, word: &Word) -> u64 {
-        self.fill(index, word);
-        let mut score = 0u64;
-        for perp in &self.grid.entries_perp_to(index) {
-            score *= self.possible_fills[perp].len() as u64;
-        }
-        self.undo_last_fill();
-        score
-    }
-
+    // fill the grid completely
+    // returns true if it's filled, false otherwise
     pub fn solve(&mut self) -> bool {
-        // println!("{}", self.grid);
+        // if there are no unfilled entries, we're done
         if self.unfilled_entries.is_empty() {
             return true;
         }
-
+        
+        // find entry with the least number of possible fills
         let most_constrained = self.unfilled_entries.iter()
             .min_by_key(|index| self.possible_fills.get(index).unwrap().len())
             .unwrap()
             .clone();
 
+        // if there are zero possible fills, the grid cannot be filled
         let mut possibilities: Vec<Word> = self.possible_fills[&most_constrained].clone();
         if possibilities.is_empty() {
             return false;
         }
 
-        // possibilities.sort_by_key(|word| self.score_fill(most_constrained, word));
+        // shuffle the possibile words
         let mut rng = thread_rng();
         rng.shuffle(&mut possibilities);
 
-        for word in possibilities.iter().take(5) {
+        // try a different number of possible words based on the length of the words
+        // this is completely arbitrary
+        let word_len = possibilities[0].size();
+        let to_take: usize = if word_len > 8 { 1 } else if word_len > 4 { 3 } else { 5 };
+
+        // for each word to try, insert that word and recursively try filling the grid
+        for word in possibilities.iter().take(to_take) {
             self.fill(most_constrained, word);
             if self.solve() {
                 return true;
@@ -461,9 +534,13 @@ impl GridSolver {
             self.undo_last_fill();
         }
 
+        // if none of the words work we can't fill the grid
         false
     }
 
+    // resets the gridsolver with a new grid but the same dictionary
+    // this is useful if you want to solve a grid multiple times
+    // since the dictionary stores a cache of lookups
     pub fn new_grid(&mut self, grid: &Grid) {
         *self = GridSolver::new(grid, &self.dict);
     }

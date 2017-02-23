@@ -4,6 +4,8 @@ use std::convert::TryFrom;
 use unidecode::unidecode;
 
 // Letter
+// really just a byte
+// A through Z, must be capital
 
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Letter(u8);
@@ -11,6 +13,8 @@ pub struct Letter(u8);
 impl TryFrom<u8> for Letter {
     type Err = ();
 
+    // attempt converting a byte to a letter
+    // uses unidecode so that e.g. b'á' maps to A
     fn try_from(byte: u8) -> Result<Letter, Self::Err> {
         let as_char = byte as char;
         if byte < 128 && as_char.is_alphabetic() {
@@ -23,6 +27,7 @@ impl TryFrom<u8> for Letter {
 }
 
 impl From<Letter> for u8 {
+    // convert a letter to a byte
     fn from(letter: Letter) -> u8 {
         letter.0
     }
@@ -35,6 +40,7 @@ impl fmt::Display for Letter {
 }
 
 // Word
+// just a vector of letters
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Word {
@@ -42,18 +48,23 @@ pub struct Word {
 }
 
 impl Word {
+    // constructs a new word from the slice
     pub fn new(letters: &[Letter]) -> Word {
         Word {
             letters: letters.iter().cloned().collect(),
         }
     }
 
+    // the length of the word
     pub fn size(&self) -> usize {
         self.letters.len()
     }
 }
 
 impl<'a> From<&'a str> for Word {
+    // converts from a string to a word
+    // ignores all non-alphabetic characters
+    // e.g. "?;ab.C'D" becomes "ABCD"
     fn from(string: &'a str) -> Word {
         let letters = unidecode(string).bytes()
             .filter_map(|b| Letter::try_from(b).ok())
@@ -81,6 +92,10 @@ impl fmt::Display for Word {
 }
 
 // Pattern
+// just a vector of option<letter>
+// the pattern "..A." matches "STAN", for example
+// . is represented by none
+// A is represented by some(Letter(b'A'))
 
 #[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Pattern {
@@ -88,19 +103,24 @@ pub struct Pattern {
 }
 
 impl Pattern {
+    // constructs a pattern from the given slice
     pub fn new(masks: &[Option<Letter>]) -> Pattern {
         Pattern {
             masks: masks.iter().cloned().collect(),
         }
     }
 
+    // the length of the pattern
     pub fn size(&self) -> usize {
         self.masks.len()
     }
 
+    // check if a word matches the pattern
     pub fn matches(&self, word: &Word) -> bool {
+        // can't match if they're not the same size
         if word.size() != self.size() {
             false
+        // make sure every some(letter) matches the corresponding letter in the word
         } else {
             self.masks.iter()
                 .zip(word.letters.iter())
@@ -111,6 +131,10 @@ impl Pattern {
 }
 
 impl<'a> From<&'a str> for Pattern {
+    // converts from a string to a pattern
+    // ignores all characters other than alphabetic ones and . (period)
+    // which represents an empty pattern
+    // e.g. "?.A.'" becomes the pattern ".A."
     fn from(string: &'a str) -> Pattern {
         let masks: Vec<Option<Letter>> = unidecode(string).bytes()
             .filter_map(|b| {
@@ -140,6 +164,8 @@ impl fmt::Display for Pattern {
 }
 
 // GridCoord
+// a coordinate in a grid
+// just a pair of usize
 
 #[derive(Clone, Copy, Debug, Default, Eq, Ord, PartialEq, PartialOrd)]
 pub struct GridCoord {
@@ -148,6 +174,7 @@ pub struct GridCoord {
 }
 
 impl GridCoord {
+    // constructs a new gridcoord
     pub fn new(row: usize, col: usize) -> GridCoord {
         GridCoord {
             row: row,
@@ -155,6 +182,7 @@ impl GridCoord {
         }
     }
 
+    // shifts the gridcoord by the given offsets
     pub fn offset(&self, row_offset: i32, col_offset: i32) -> Option<GridCoord> {
         let new_row = (self.row as i32) + row_offset;
         let new_col = (self.col as i32) + col_offset;
@@ -165,6 +193,7 @@ impl GridCoord {
         }
     }
 
+    // returns the cells neighboring the gridcoord
     pub fn neighbors(&self) -> Vec<GridCoord> {
         [self.offset(0, -1), self.offset(1, 0), self.offset(0, -1), self.offset(-1, 0)]
             .into_iter()
@@ -186,6 +215,7 @@ impl fmt::Display for GridCoord {
 }
 
 // EntryDir
+// self explanatory i hope
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EntryDir {
@@ -194,9 +224,15 @@ pub enum EntryDir {
 }
 
 // EntryIndex
+// the index of an entry in a grid
+// STARTS AT 1, NOT 0
+// i did this to conform with crossword numberings
+// since they start at 1 across
+// but that means i have to use try_from instead of just from :(
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EntryIndex {
+    // every entry has a number and a direction
     pub num: u32,
     pub dir: EntryDir,
 }
@@ -239,6 +275,9 @@ impl fmt::Display for EntryIndex {
 }
 
 // Entry
+// an entry in a grid
+// just a vector of option<letter>
+// none means that cell is empty, some(letter) is filled with that letter
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Entry {
@@ -254,6 +293,9 @@ impl Entry {
 }
 
 // Cell
+// a cell in a grid
+// black cells cannot be filled
+// white cells can be filled or unfilled
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum Cell {

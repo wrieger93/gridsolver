@@ -16,7 +16,9 @@ cargo run --release
 
 It should spit out a completely filled grid.
 Solve times can vary wildy; if it's taking more than 10 or 20 seconds, you should restart the program.
-To fill a different grid, you have to change the file that's loaded in `src/bin/run.rs`.
+
+You can set the dictionary and grid files from the command line.
+Run `cargo run --release -- --help` for detailed instructions.
 
 ### TODO
 

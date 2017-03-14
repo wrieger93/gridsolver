@@ -1,5 +1,5 @@
 use std::fmt;
-use std::convert::TryFrom;
+use try_from::TryFrom;
 
 use unidecode::unidecode;
 

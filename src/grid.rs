@@ -5,12 +5,12 @@ use std::io::prelude::*;
 use std::io;
 use std::iter::Iterator;
 use std::path::Path;
-use std::convert::TryFrom;
+use try_from::TryFrom;
 
 use rand::{thread_rng, Rng};
 
 use basic_types::*;
-use dict::Dictionary;
+use dict::{UnrankedDict, RankedDict}; 
 
 // Grid
 // a grid of cells
@@ -408,14 +408,14 @@ impl fmt::Display for Grid {
 // a structure that fills a grid with valid words from a dictionary
 
 #[derive(Clone, Debug)]
-pub struct GridSolver {
+pub struct GridSolver<T: UnrankedDict> {
     // the grid being filled
     grid: Grid,
     // the dictionary in use
-    dict: Dictionary,
+    dict: T,
     // words that have been added to the grid already
     // you can't reuse words in a fill
-    added_words: HashSet<Word>,
+    pub added_words: HashSet<Word>,
     // entries that haven't been filled yet
     unfilled_entries: HashSet<EntryIndex>,
     // for every entry, a list of words that can fill that entry
@@ -427,12 +427,12 @@ pub struct GridSolver {
     changes: Vec<(EntryIndex, Entry)>,
 }
 
-impl GridSolver {
+impl<T: UnrankedDict> GridSolver<T> {
     // construct a new gridsolver for the given grid with the given dictionary
-    pub fn new(grid: &Grid, dict: &Dictionary) -> GridSolver {
+    pub fn new(grid: Grid, dict: T) -> GridSolver<T> {
         let mut solver = GridSolver {
-            grid: grid.clone(),
-            dict: dict.clone(),
+            grid: grid,
+            dict: dict,
             added_words: HashSet::new(),
             unfilled_entries: HashSet::new(),
             possible_fills: HashMap::new(),
@@ -472,6 +472,7 @@ impl GridSolver {
         // fill the entry and remove the index from unfilled_entries
         self.grid.fill_entry(index, word);
         self.unfilled_entries.remove(&index);
+        self.added_words.insert(word.clone());
         // update the possible words for the intersecting entries
         for perp in self.grid.entries_perp_to(index) {
             self.update_possible_fills(perp);
@@ -523,10 +524,15 @@ impl GridSolver {
         // try a different number of possible words based on the length of the words
         // this is completely arbitrary
         let word_len = possibilities[0].size();
-        let to_take: usize = if word_len > 8 { 1 } else if word_len > 4 { 3 } else { 5 };
+        let to_take: usize = if word_len > 8 { 5 } else if word_len > 4 { 5 } else { 5 };
+
+        let possibilities = possibilities.into_iter()
+            .take(to_take)
+            .collect::<Vec<_>>();
 
         // for each word to try, insert that word and recursively try filling the grid
-        for word in possibilities.iter().take(to_take) {
+        for word in &possibilities {
+            // let score = self.dict.get_score(&word).unwrap();
             self.fill(most_constrained, word);
             if self.solve() {
                 return true;
@@ -537,16 +543,23 @@ impl GridSolver {
         // if none of the words work we can't fill the grid
         false
     }
+}
 
-    // resets the gridsolver with a new grid but the same dictionary
-    // this is useful if you want to solve a grid multiple times
-    // since the dictionary stores a cache of lookups
-    pub fn new_grid(&mut self, grid: &Grid) {
-        *self = GridSolver::new(grid, &self.dict);
+impl<T: RankedDict> GridSolver<T> {
+    pub fn average_score(&self) -> f32 {
+        let mut score = 0;
+        for word in &self.added_words {
+            score += self.dict.get_score(&word).unwrap_or(0);
+        }
+        if !self.added_words.is_empty() {
+            (score as f32) / (self.added_words.len() as f32)
+        } else {
+            0f32
+        }
     }
 }
 
-impl fmt::Display for GridSolver {
+impl<T: UnrankedDict> fmt::Display for GridSolver<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.grid)
     }

@@ -3,10 +3,9 @@ use try_from::TryFrom;
 
 use unidecode::unidecode;
 
-// Letter
-// really just a byte
-// A through Z, must be capital
-
+/// Letter
+/// really just a byte
+/// A through Z, must be capital
 #[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct Letter(u8);
 

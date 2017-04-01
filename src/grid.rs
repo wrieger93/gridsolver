@@ -82,8 +82,8 @@ impl Grid {
             .split(',')
             .map(|s| s.trim().parse().unwrap())
             .collect();
-        let width = dimensions[0];
-        let height = dimensions[1];
+        let height = dimensions[0];
+        let width = dimensions[1];
 
         let cells: Vec<Cell> = entire.chars()
             .skip_while(|c| *c != '\n')
@@ -91,7 +91,8 @@ impl Grid {
             .filter_map(|c| match c {
                 '.' => Some(Cell::White(None)),
                 '#' => Some(Cell::Black),
-                _ => None,
+                e if e.is_whitespace() => None,
+                e => {println!("{}", e); Some(Cell::White(Letter::try_from(e as u8).ok()))},
             })
             .collect();
 
@@ -383,6 +384,9 @@ impl Grid {
 
 impl fmt::Display for Grid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let words = self.entries().len();
+        let average_length = 0;
+        write!(f, "{}x{}, {} words, {} average length\n", self.height, self.width, words, average_length)?;
         for row in 0..self.height {
             for col in 0..self.width {
                 let cell = self.get_cell((row, col).into()).unwrap();
@@ -424,7 +428,7 @@ pub struct GridSolver<T: UnrankedDict> {
     // a stack that keeps tract of the changes we make to the grid
     // whenever we insert a new word
     // this allows us to easily backtrack by undoing the changes
-    changes: Vec<(EntryIndex, Entry)>,
+    changes: Vec<(EntryIndex, Word, Entry)>,
 }
 
 impl<T: UnrankedDict> GridSolver<T> {
@@ -468,7 +472,7 @@ impl<T: UnrankedDict> GridSolver<T> {
     fn fill(&mut self, index: EntryIndex, word: &Word) {
         // push the index we're changing as well as a copy of the entry before
         // we insert the word onto the changes stack
-        self.changes.push((index, self.grid.get_entry(index).unwrap()));
+        self.changes.push((index, word.clone(), self.grid.get_entry(index).unwrap()));
         // fill the entry and remove the index from unfilled_entries
         self.grid.fill_entry(index, word);
         self.unfilled_entries.remove(&index);
@@ -486,10 +490,11 @@ impl<T: UnrankedDict> GridSolver<T> {
             return;
         }
         // set the entry to what it was beforehand
-        let (index, prev_entry) = self.changes.pop().unwrap();
+        let (index, prev_word, prev_entry) = self.changes.pop().unwrap();
         self.grid.set_entry(index, &prev_entry);
         // the entry is now unfilled
         self.unfilled_entries.insert(index);
+        self.added_words.remove(&prev_word);
         // update the possible words for both the index and all intersecting indices
         self.update_possible_fills(index);
         for perp in self.grid.entries_perp_to(index) {
@@ -557,10 +562,120 @@ impl<T: RankedDict> GridSolver<T> {
             0f32
         }
     }
+
+    fn update_possible_fills_ranked(&mut self, index: EntryIndex) {
+        // get the entry from the grid
+        let opt_entry = self.grid.get_entry(index);
+        match opt_entry {
+            Some(entry) => {
+                // make a pattern fitting the entry
+                // and update the possible fill words
+                let pattern = Pattern::new(&entry.letters);
+                let fills = self.dict.lookup_range(&pattern, Some(40), None);
+                self.possible_fills.insert(index, fills);
+            }
+            _ => {},
+        };
+    }
+
+    pub fn solve_ranked(&mut self) -> bool {
+        // if there are no unfilled entries, we're done
+        if self.unfilled_entries.is_empty() {
+            return true;
+        }
+        
+        // find entry with the least number of possible fills
+        let most_constrained = self.unfilled_entries.iter()
+            .min_by_key(|index| self.possible_fills.get(index).unwrap().len())
+            .unwrap()
+            .clone();
+
+        // if there are zero possible fills, the grid cannot be filled
+        let mut possibilities: Vec<Word> = self.possible_fills[&most_constrained].clone();
+        if possibilities.is_empty() {
+            return false;
+        }
+
+        // shuffle the possibile words
+        // let mut rng = thread_rng();
+        // rng.shuffle(&mut possibilities);
+
+        // try a different number of possible words based on the length of the words
+        // this is completely arbitrary
+        let word_len = possibilities[0].size();
+        let to_take: usize = if word_len > 8 { 5 } else if word_len > 4 { 5 } else { 5 };
+
+        let possibilities = possibilities.into_iter()
+            .take(to_take)
+            .collect::<Vec<_>>();
+
+        // for each word to try, insert that word and recursively try filling the grid
+        for word in &possibilities {
+            // let score = self.dict.get_score(&word).unwrap();
+            self.fill_ranked(most_constrained, word);
+            if self.solve_ranked() {
+                return true;
+            }
+            self.undo_last_fill_ranked();
+        }
+
+        // if none of the words work we can't fill the grid
+        false
+    }
+
+    fn fill_ranked(&mut self, index: EntryIndex, word: &Word) {
+        // push the index we're changing as well as a copy of the entry before
+        // we insert the word onto the changes stack
+        self.changes.push((index, word.clone(), self.grid.get_entry(index).unwrap()));
+        // fill the entry and remove the index from unfilled_entries
+        self.grid.fill_entry(index, word);
+        self.unfilled_entries.remove(&index);
+        self.added_words.insert(word.clone());
+        // update the possible words for the intersecting entries
+        self.update_possible_fills_ranked(index);
+        for perp in self.grid.entries_perp_to(index) {
+            self.update_possible_fills(perp);
+        }
+    }
+
+    fn undo_last_fill_ranked(&mut self) {
+        // no changes = nothing to undo
+        if self.changes.is_empty() {
+            return;
+        }
+        // set the entry to what it was beforehand
+        let (index, prev_word, prev_entry) = self.changes.pop().unwrap();
+        self.grid.set_entry(index, &prev_entry);
+        // the entry is now unfilled
+        self.unfilled_entries.insert(index);
+        self.added_words.remove(&prev_word);
+        // update the possible words for both the index and all intersecting indices
+        self.update_possible_fills_ranked(index);
+        for perp in self.grid.entries_perp_to(index) {
+            self.update_possible_fills_ranked(perp);
+        }
+    }
 }
 
 impl<T: UnrankedDict> fmt::Display for GridSolver<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.grid)
+        write!(f, "{}", self.grid)?;
+        let mut added_words = self.added_words.iter().cloned().collect::<Vec<_>>();
+        if added_words.is_empty() {
+            return write!(f, "no words added yet\n");
+        } else {
+            write!(f, "number of words: {}\n", self.added_words.len())?;
+        }
+        added_words.sort_by_key(|word| word.size());
+        let mut prev_word_size = added_words.get(0).unwrap().size();
+        for word in &added_words {
+            if prev_word_size < word.size() {
+                write!(f, "\n")?;
+                prev_word_size = word.size();
+            }
+            write!(f, "{}, ", word)?;
+        }
+        write!(f, "\n")?;
+        Ok(())
     }
 }

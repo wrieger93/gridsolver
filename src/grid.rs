@@ -92,7 +92,7 @@ impl Grid {
                 '.' => Some(Cell::White(None)),
                 '#' => Some(Cell::Black),
                 e if e.is_whitespace() => None,
-                e => {println!("{}", e); Some(Cell::White(Letter::try_from(e as u8).ok()))},
+                e => Some(Cell::White(Letter::try_from(e as u8).ok())),
             })
             .collect();
 
@@ -445,8 +445,15 @@ impl<T: UnrankedDict> GridSolver<T> {
 
         // all entries are initially unsolved
         for index in solver.grid.entry_indices() {
-            solver.update_possible_fills(index);
-            solver.unfilled_entries.insert(index);
+            if solver.grid.is_entry_filled(index) {
+                let entry = solver.grid.get_entry(index).unwrap();
+                let letters = entry.letters.into_iter().filter_map(|x| x).collect::<Vec<_>>();
+                solver.added_words.insert(Word::new(&letters));
+            }
+            else {
+                solver.update_possible_fills(index);
+                solver.unfilled_entries.insert(index);
+            }
         }
 
         solver

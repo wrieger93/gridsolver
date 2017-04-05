@@ -67,5 +67,4 @@ fn main() {
         solver.solve();
         println!("{}", solver);
     };
-
 }
